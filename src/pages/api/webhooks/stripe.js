@@ -24,8 +24,9 @@ async function updateUserSubscription(userId, data) {
       }
     });
 
-    // Use Firebase REST API
-    const url = `https://firestore.googleapis.com/v1/projects/askthestars-37936/databases/(default)/documents/users/${userId}`;
+    // Use Firebase REST API with updateMask as query parameter
+    const updateMask = Object.keys(data).map(key => `updateMask.fieldPaths=${key}`).join('&');
+    const url = `https://firestore.googleapis.com/v1/projects/askthestars-37936/databases/(default)/documents/users/${userId}?${updateMask}`;
     
     const response = await fetch(url, {
       method: 'PATCH',
@@ -33,10 +34,7 @@ async function updateUserSubscription(userId, data) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        fields: fields,
-        updateMask: {
-          fieldPaths: Object.keys(data)
-        }
+        fields: fields
       })
     });
 
