@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { signOut } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import SoulmateResults from './SoulmateResults';
 import ConversationalOnboarding from './ConversationalOnboarding';
@@ -17,74 +17,107 @@ export default function Dashboard({ user }) {
   const [loading, setLoading] = useState(true);
   const [selectedConversation, setSelectedConversation] = useState(null);
 
+  // Simple feature access check (hidden from UI)
+  const isPremiumUser = (userData) => {
+    const isPremium = userData?.subscriptionStatus === 'active' || 
+                     userData?.plan === 'premium' || 
+                     userData?.plan === 'annual' || 
+                     userData?.plan === 'weekly';
+    return isPremium;
+  };
+
   const dashboardFeatures = [
     {
       icon: "🎱",
       title: "Ask me anything",
       description: "Get cosmic guidance on any question",
       gradient: "from-red-500 to-orange-500",
-      category: "ask-anything"
+      category: "ask-anything",
+      free: true
     },
     {
       icon: "🔮",
       title: "Daily horoscope", 
       description: "Your personalized daily cosmic forecast",
       gradient: "from-orange-500 to-red-600",
-      category: "daily-horoscope"
+      category: "daily-horoscope",
+      free: true
     },
     {
       icon: "🌹",
       title: "Romantic compatibility",
       description: "Discover your perfect cosmic match",
       gradient: "from-red-400 to-orange-500",
-      category: "romantic-compatibility"
+      category: "romantic-compatibility",
+      free: false
     },
     {
       icon: "🔗",
       title: "Your soulmate",
       description: "Find your destined life partner",
       gradient: "from-orange-600 to-red-500",
-      category: "soulmate-generator"
+      category: "soulmate-generator",
+      free: false
     },
     {
       icon: "🤝",
       title: "Friend compatibility",
       description: "Understand your friendships better",
       gradient: "from-red-500 to-orange-600",
-      category: "friend-compatibility"
+      category: "friend-compatibility",
+      free: false
     },
     {
       icon: "☁️",
       title: "Dream interpreter",
       description: "Unlock the secrets of your dreams",
       gradient: "from-orange-500 to-red-500",
-      category: "dream-interpreter"
+      category: "dream-interpreter",
+      free: false
     },
     {
       icon: "⭐",
       title: "Astrological events",
       description: "Important cosmic happenings",
       gradient: "from-red-600 to-orange-500",
-      category: "astrological-events"
+      category: "astrological-events",
+      free: false
     },
     {
       icon: "☀️",
       title: "Tarot card interpreter",
       description: "Divine insights through tarot",
       gradient: "from-orange-600 to-red-600",
-      category: "tarot-interpreter"
+      category: "tarot-interpreter",
+      free: false
     },
     {
       icon: "🪁",
       title: "Personal growth",
       description: "Develop your highest potential",
       gradient: "from-red-500 to-orange-400",
-      category: "personal-growth"
+      category: "personal-growth",
+      free: false
     }
   ];
 
   useEffect(() => {
     checkExistingProfile();
+  }, [user]);
+
+  // Real-time listener for user data updates
+  useEffect(() => {
+    if (user) {
+      const docRef = doc(db, 'users', user.uid);
+      const unsubscribe = onSnapshot(docRef, (doc) => {
+        if (doc.exists()) {
+          const data = doc.data();
+          setUserData(data);
+        }
+      });
+
+      return () => unsubscribe();
+    }
   }, [user]);
 
   const checkExistingProfile = async () => {
@@ -173,7 +206,16 @@ export default function Dashboard({ user }) {
     setCurrentScreen('chat');
   };
 
+  // Updated feature click handler with hidden premium gating
   const handleFeatureClick = (feature) => {
+    // Check if feature requires premium access (silently)
+    if (!feature.free && !isPremiumUser(userData)) {
+      alert('This feature requires a premium subscription. Upgrade to unlock all cosmic insights!');
+      setCurrentScreen('trial');
+      return;
+    }
+
+    // Original logic for accessible features
     if (feature.category === 'soulmate-generator') {
       setCurrentScreen('soulmate-generator');
     } else if (feature.category === 'personal-growth') {
@@ -193,6 +235,9 @@ export default function Dashboard({ user }) {
     setCurrentScreen('dashboard');
     setCurrentChatCategory(null);
     setSelectedConversation(null);
+    
+    // Refresh user data when returning to dashboard
+    checkExistingProfile();
   };
 
   if (loading) {
@@ -224,7 +269,7 @@ export default function Dashboard({ user }) {
   }
 
   if (currentScreen === 'trial') {
-    return <TrialSignup onAccept={handleTrialAccept} onSkip={handleTrialSkip} />;
+    return <TrialSignup user={user} onAccept={handleTrialAccept} onSkip={handleTrialSkip} />;
   }
 
   if (currentScreen === 'profile') {

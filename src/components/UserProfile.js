@@ -5,9 +5,10 @@ import { auth, db } from '../lib/firebase';
 import TermsOfService from './TermsOfService';
 import PrivacyPolicy from './PrivacyPolicy';
 import ContactUs from './ContactUs';
+import SubscriptionManagement from './SubscriptionManagement'; // Add this import
 
 export default function UserProfile({ user, userData, onBack, onEditProfile }) {
-  const [currentView, setCurrentView] = useState('profile'); // 'profile', 'terms', 'privacy', 'contact'
+  const [currentView, setCurrentView] = useState('profile'); // Add 'subscription' to the possible views
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [editData, setEditData] = useState({
@@ -183,6 +184,17 @@ export default function UserProfile({ user, userData, onBack, onEditProfile }) {
     setCurrentView('profile');
   };
 
+  // Show Subscription Management page
+  if (currentView === 'subscription') {
+    return (
+      <SubscriptionManagement 
+        user={user} 
+        userData={userData} 
+        onBack={handleBackToProfile} 
+      />
+    );
+  }
+
   // Show Terms of Service page
   if (currentView === 'terms') {
     return <TermsOfService onBack={handleBackToProfile} />;
@@ -209,7 +221,7 @@ export default function UserProfile({ user, userData, onBack, onEditProfile }) {
       icon: '💳',
       title: 'Subscription',
       description: 'Manage your Ask the Stars subscription',
-      action: () => alert('Subscription management coming soon!')
+      action: () => setCurrentView('subscription') // Updated to navigate to subscription page
     },
     {
       icon: '📞',
