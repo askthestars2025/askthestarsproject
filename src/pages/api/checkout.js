@@ -1,4 +1,4 @@
-// pages/api/checkout.js - CLEAN VERSION
+// pages/api/checkout.js - PRODUCTION VERSION
 import Stripe from 'stripe';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
@@ -9,10 +9,10 @@ const getPriceData = (plan) => {
     return {
       currency: 'usd',
       product_data: {
-        name: 'Ask The Stars - Weekly Test',
-        description: 'Testing weekly subscription - $0.50'
+        name: 'Ask The Stars - Weekly Cosmic Access',
+        description: 'Unlock all premium astrology features for 1 week'
       },
-      unit_amount: 0, // $0.50 in cents
+      unit_amount: 499, // $4.99 in cents
       recurring: {
         interval: 'week'
       }
@@ -21,10 +21,10 @@ const getPriceData = (plan) => {
     return {
       currency: 'usd', 
       product_data: {
-        name: 'Ask The Stars - Annual Test',
-        description: 'Testing annual subscription - $0.50'
+        name: 'Ask The Stars - Annual Stellar Membership',
+        description: 'Unlock all premium astrology features for 1 year'
       },
-      unit_amount: 50, // $0.50 in cents
+      unit_amount: 4999, // $49.99 in cents
       recurring: {
         interval: 'year'
       }
