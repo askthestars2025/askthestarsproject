@@ -1,6 +1,5 @@
 // pages/api/webhooks/stripe.js
 import Stripe from 'stripe';
-import { buffer } from 'micro';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -12,13 +11,22 @@ export const config = {
   },
 };
 
+// Helper function to get raw body without micro
+async function getRawBody(req) {
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    const buf = await buffer(req);
+    const buf = await getRawBody(req);
     const sig = req.headers['stripe-signature'];
 
     if (!webhookSecret) {
