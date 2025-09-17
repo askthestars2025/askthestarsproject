@@ -1,9 +1,9 @@
-// pages/api/checkout.js - MINIMAL PRODUCTION VERSION
+// pages/api/checkout.js - CLEAN VERSION
 import Stripe from 'stripe';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-// Define price data directly - TESTING AMOUNTS
+// Define price data directly
 const getPriceData = (plan) => {
   if (plan === 'weekly') {
     return {
@@ -12,7 +12,7 @@ const getPriceData = (plan) => {
         name: 'Ask The Stars - Weekly Test',
         description: 'Testing weekly subscription - $0.50'
       },
-      unit_amount: 10, // $0.50 in cents - TESTING AMOUNT
+      unit_amount: 0, // $0.50 in cents
       recurring: {
         interval: 'week'
       }
@@ -24,7 +24,7 @@ const getPriceData = (plan) => {
         name: 'Ask The Stars - Annual Test',
         description: 'Testing annual subscription - $0.50'
       },
-      unit_amount: 50, // $0.50 in cents - TESTING AMOUNT
+      unit_amount: 50, // $0.50 in cents
       recurring: {
         interval: 'year'
       }
@@ -56,6 +56,8 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Invalid plan configuration' });
     }
 
+    console.log('Creating checkout with price_data:', priceData);
+
     // Create checkout session using price_data
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -81,6 +83,8 @@ export default async function handler(req, res) {
       allow_promotion_codes: true,
     });
 
+    console.log('Checkout session created:', session.id);
+    
     res.status(200).json({ 
       url: session.url,
       sessionId: session.id 
