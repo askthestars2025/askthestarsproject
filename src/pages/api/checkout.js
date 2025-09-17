@@ -1,18 +1,18 @@
-// pages/api/checkout.js
+// pages/api/checkout.js - MINIMAL PRODUCTION VERSION
 import Stripe from 'stripe';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-// Define price data directly (workaround for price ID issue)
+// Define price data directly - TESTING AMOUNTS
 const getPriceData = (plan) => {
   if (plan === 'weekly') {
     return {
       currency: 'usd',
       product_data: {
-        name: 'Ask The Stars - Weekly Cosmic Access',
-        description: 'Unlock all premium astrology features for 1 week'
+        name: 'Ask The Stars - Weekly Test',
+        description: 'Testing weekly subscription - $0.50'
       },
-      unit_amount: 499, // $4.99 in cents
+      unit_amount: 10, // $0.50 in cents - TESTING AMOUNT
       recurring: {
         interval: 'week'
       }
@@ -21,10 +21,10 @@ const getPriceData = (plan) => {
     return {
       currency: 'usd', 
       product_data: {
-        name: 'Ask The Stars - Annual Stellar Membership',
-        description: 'Unlock all premium astrology features for 1 year'
+        name: 'Ask The Stars - Annual Test',
+        description: 'Testing annual subscription - $0.50'
       },
-      unit_amount: 4999, // $49.99 in cents
+      unit_amount: 50, // $0.50 in cents - TESTING AMOUNT
       recurring: {
         interval: 'year'
       }
@@ -34,7 +34,6 @@ const getPriceData = (plan) => {
 };
 
 export default async function handler(req, res) {
-  // Only allow POST requests
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -43,18 +42,12 @@ export default async function handler(req, res) {
     const { plan, userId, email } = req.body;
 
     // Validate input
-    if (!plan || !userId) {
-      return res.status(400).json({ error: 'Missing required fields: plan and userId' });
+    if (!plan || !userId || !['weekly', 'annual'].includes(plan)) {
+      return res.status(400).json({ error: 'Invalid plan or missing userId' });
     }
 
-    if (!['weekly', 'annual'].includes(plan)) {
-      return res.status(400).json({ error: 'Invalid plan type' });
-    }
-
-    // Validate environment variables
     if (!process.env.STRIPE_SECRET_KEY) {
-      console.error('STRIPE_SECRET_KEY environment variable is not set');
-      return res.status(500).json({ error: 'Payment system configuration error' });
+      return res.status(500).json({ error: 'Payment system not configured' });
     }
 
     // Get price data for the plan
@@ -63,10 +56,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Invalid plan configuration' });
     }
 
-    console.log('Creating subscription checkout session for:', { plan, userId, email });
-    console.log('Using price_data approach (workaround for price ID issue)');
-
-    // Create checkout session using price_data instead of price IDs
+    // Create checkout session using price_data
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [{
@@ -74,61 +64,43 @@ export default async function handler(req, res) {
         quantity: 1,
       }],
       mode: 'subscription',
-      
-      success_url: `${req.headers.origin || 'https://lunatica-client.vercel.app'}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${req.headers.origin || 'https://lunatica-client.vercel.app'}/pricing?cancelled=true`,
-      customer_email: email || undefined,
+      success_url: `${req.headers.origin || process.env.NEXTAUTH_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${req.headers.origin || process.env.NEXTAUTH_URL}/pricing?cancelled=true`,
+      customer_email: email,
       metadata: {
         userId: userId.toString(),
         plan,
-        type: 'astrology_subscription'
       },
-      billing_address_collection: 'required',
-      allow_promotion_codes: true,
       subscription_data: {
         metadata: {
           userId: userId.toString(),
-          plan
+          plan,
         }
       },
-      automatic_tax: {
-        enabled: process.env.STRIPE_AUTOMATIC_TAX === 'true'
-      }
+      billing_address_collection: 'required',
+      allow_promotion_codes: true,
     });
 
-    console.log('Subscription checkout session created:', session.id);
-    
-    // Return the checkout URL
     res.status(200).json({ 
       url: session.url,
       sessionId: session.id 
     });
 
   } catch (error) {
-    console.error('Stripe checkout error:', {
-      message: error.message,
-      type: error.type,
-      code: error.code,
-      userId: req.body?.userId,
-      plan: req.body?.plan
-    });
+    console.error('Stripe checkout error:', error.message);
+    
+    // Return user-friendly error messages
+    const errorMessages = {
+      StripeCardError: 'Payment was declined',
+      StripeRateLimitError: 'Too many requests, please try again',
+      StripeInvalidRequestError: 'Invalid request',
+      StripeAPIError: 'Payment service unavailable',
+      StripeConnectionError: 'Network error, please try again',
+    };
 
-    // Return appropriate error message
-    if (error.type === 'StripeCardError') {
-      res.status(400).json({ error: 'Card was declined' });
-    } else if (error.type === 'StripeRateLimitError') {
-      res.status(429).json({ error: 'Rate limit exceeded, please try again later' });
-    } else if (error.type === 'StripeInvalidRequestError') {
-      res.status(400).json({ error: 'Invalid request parameters' });
-    } else if (error.type === 'StripeAPIError') {
-      res.status(502).json({ error: 'Payment service temporarily unavailable' });
-    } else if (error.type === 'StripeConnectionError') {
-      res.status(503).json({ error: 'Network error, please try again' });
-    } else {
-      res.status(500).json({
-        error: 'Payment processing failed',
-        details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
-      });
-    }
+    const message = errorMessages[error.type] || 'Payment processing failed';
+    const statusCode = error.type === 'StripeRateLimitError' ? 429 : 400;
+    
+    res.status(statusCode).json({ error: message });
   }
 }
