@@ -3,6 +3,12 @@ import Stripe from 'stripe';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
+// Define your price IDs (create these in Stripe Dashboard or via API)
+const STRIPE_PRICES = {
+  weekly: process.env.STRIPE_WEEKLY_PRICE_ID || 'price_weekly_placeholder',
+  annual: process.env.STRIPE_ANNUAL_PRICE_ID || 'price_annual_placeholder'
+};
+
 export default async function handler(req, res) {
   // Only allow POST requests
   if (req.method !== 'POST') {
@@ -14,82 +20,90 @@ export default async function handler(req, res) {
 
     // Validate input
     if (!plan || !userId) {
-      return res.status(400).json({ error: 'Missing plan or userId' });
+      return res.status(400).json({ error: 'Missing required fields: plan and userId' });
     }
 
-    // Validate that we have the required environment variables
+    if (!['weekly', 'annual'].includes(plan)) {
+      return res.status(400).json({ error: 'Invalid plan type' });
+    }
+
+    // Validate environment variables
     if (!process.env.STRIPE_SECRET_KEY) {
       console.error('STRIPE_SECRET_KEY environment variable is not set');
-      return res.status(500).json({ error: 'Payment system not configured' });
+      return res.status(500).json({ error: 'Payment system configuration error' });
     }
 
-    // Create dynamic price data for the checkout session
-    const lineItems = plan === 'weekly' 
-      ? [{
-          price_data: {
-            currency: 'usd',
-            product_data: {
-              name: 'Weekly Cosmic Access',
-              description: 'Unlock all premium astrology features for 1 week',
-              images: ['https://your-domain.com/assets/ask-logo.png'], // Optional: Add your logo
-            },
-            unit_amount: 99, // $4.99 in cents
-          },
-          quantity: 1,
-        }]
-      : [{
-          price_data: {
-            currency: 'usd', 
-            product_data: {
-              name: 'Annual Cosmic Membership',
-              description: 'Unlock all premium astrology features for 1 year',
-              images: ['https://your-domain.com/assets/ask-logo.png'], // Optional: Add your logo
-            },
-            unit_amount: 99, // $49.99 in cents
-          },
-          quantity: 1,
-        }];
+    // Check if price IDs are configured
+    if (!STRIPE_PRICES[plan] || STRIPE_PRICES[plan].includes('placeholder')) {
+      console.error(`Stripe price ID not configured for plan: ${plan}`);
+      return res.status(500).json({ error: 'Subscription plan not available' });
+    }
 
-    console.log('Creating checkout session for:', { plan, userId });
+    console.log('Creating subscription checkout session for:', { plan, userId, email });
 
+    // Create checkout session for subscription
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
-      line_items: lineItems,
-      mode: 'payment', // One-time payment
-      success_url: `${req.headers.origin || 'http://localhost:3000'}?success=true&plan=${plan}`,
-      cancel_url: `${req.headers.origin || 'http://localhost:3000'}?cancelled=true`,
+      line_items: [{
+        price: STRIPE_PRICES[plan],
+        quantity: 1,
+      }],
+      mode: 'subscription', // Changed to subscription for recurring billing
+      success_url: `${req.headers.origin || process.env.NEXTAUTH_URL || 'http://localhost:3000'}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${req.headers.origin || process.env.NEXTAUTH_URL || 'http://localhost:3000'}/pricing?cancelled=true`,
       customer_email: email || undefined,
-      metadata: { 
-        userId,
+      metadata: {
+        userId: userId.toString(),
         plan,
         type: 'astrology_subscription'
       },
-      billing_address_collection: 'auto',
-      shipping_address_collection: {
-        allowed_countries: [
-          'US', // United States
-          'CA', // Canada
-          'GB', // United Kingdom
-          'AU', // Australia
-          'IN', // India
-          'DE', // Germany
-          'FR', // France
-          'SG', // Singapore
-          'NZ', // New Zealand
-          'IT', // Italy
-        ],
+      billing_address_collection: 'required',
+      allow_promotion_codes: true, // Allow discount codes
+      subscription_data: {
+        metadata: {
+          userId: userId.toString(),
+          plan
+        }
       },
-      
+      // Automatic tax calculation (optional but recommended)
+      automatic_tax: {
+        enabled: process.env.STRIPE_AUTOMATIC_TAX === 'true'
+      }
     });
 
-    console.log('Checkout session created:', session.id);
+    console.log('Subscription checkout session created:', session.id);
     
-    res.status(200).json({ url: session.url });
-  } catch (error) {
-    console.error('Stripe checkout error:', error);
-    res.status(500).json({ 
-      error: 'Failed to create checkout session',
-      details: process.env.NODE_ENV === 'development' ? error.message : 'Payment processing error'
+    // Return the checkout URL
+    res.status(200).json({ 
+      url: session.url,
+      sessionId: session.id 
     });
+
+  } catch (error) {
+    console.error('Stripe checkout error:', {
+      message: error.message,
+      type: error.type,
+      code: error.code,
+      userId: req.body?.userId,
+      plan: req.body?.plan
+    });
+
+    // Return appropriate error message
+    if (error.type === 'StripeCardError') {
+      res.status(400).json({ error: 'Card was declined' });
+    } else if (error.type === 'StripeRateLimitError') {
+      res.status(429).json({ error: 'Rate limit exceeded, please try again later' });
+    } else if (error.type === 'StripeInvalidRequestError') {
+      res.status(400).json({ error: 'Invalid request parameters' });
+    } else if (error.type === 'StripeAPIError') {
+      res.status(502).json({ error: 'Payment service temporarily unavailable' });
+    } else if (error.type === 'StripeConnectionError') {
+      res.status(503).json({ error: 'Network error, please try again' });
+    } else {
+      res.status(500).json({
+        error: 'Payment processing failed',
+        details: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
   }
 }
