@@ -1,8 +1,22 @@
 // pages/api/webhooks/stripe.js
 import Stripe from 'stripe';
+import admin from 'firebase-admin';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+// Initialize Firebase Admin (add this to your project)
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    }),
+  });
+}
+
+const db = admin.firestore();
 
 // Disable body parsing for webhook
 export const config = {
@@ -11,7 +25,6 @@ export const config = {
   },
 };
 
-// Helper function to get raw body without micro
 async function getRawBody(req) {
   const chunks = [];
   for await (const chunk of req) {
@@ -35,7 +48,6 @@ export default async function handler(req, res) {
     }
 
     let event;
-
     try {
       event = stripe.webhooks.constructEvent(buf, sig, webhookSecret);
     } catch (err) {
@@ -96,20 +108,23 @@ async function handleCheckoutCompleted(session) {
     // Get the subscription details
     const subscription = await stripe.subscriptions.retrieve(session.subscription);
     
-    // Update user subscription in your database
+    // Update user subscription in Firebase
     await updateUserSubscription(userId, {
       stripeCustomerId: session.customer,
       stripeSubscriptionId: subscription.id,
       subscriptionStatus: 'active',
       plan: plan,
-      subscriptionDate: new Date(),
-      subscriptionEndDate: new Date(subscription.current_period_end * 1000),
-      priceId: subscription.items.data[0].price.id
+      subscriptionDate: new Date().toISOString(),
+      subscriptionEndDate: new Date(subscription.current_period_end * 1000).toISOString(),
+      priceId: subscription.items.data[0].price.id,
+      hasAcceptedTrial: true, // Important: Mark trial as accepted
+      updatedAt: new Date().toISOString()
     });
 
     console.log(`Subscription activated for user ${userId}, plan: ${plan}`);
   } catch (error) {
     console.error('Error handling checkout completion:', error);
+    throw error; // Re-throw to trigger webhook retry
   }
 }
 
@@ -117,7 +132,7 @@ async function handleSubscriptionCreated(subscription) {
   try {
     console.log('Processing subscription creation:', subscription.id);
     
-    const { userId, plan } = subscription.metadata;
+    const { userId } = subscription.metadata;
     
     if (!userId) {
       console.error('Missing userId in subscription metadata:', subscription.metadata);
@@ -127,13 +142,15 @@ async function handleSubscriptionCreated(subscription) {
     await updateUserSubscription(userId, {
       stripeSubscriptionId: subscription.id,
       subscriptionStatus: subscription.status,
-      subscriptionDate: new Date(subscription.created * 1000),
-      subscriptionEndDate: new Date(subscription.current_period_end * 1000)
+      subscriptionDate: new Date(subscription.created * 1000).toISOString(),
+      subscriptionEndDate: new Date(subscription.current_period_end * 1000).toISOString(),
+      updatedAt: new Date().toISOString()
     });
 
     console.log(`Subscription created for user ${userId}`);
   } catch (error) {
     console.error('Error handling subscription creation:', error);
+    throw error;
   }
 }
 
@@ -150,12 +167,14 @@ async function handleSubscriptionUpdated(subscription) {
 
     await updateUserSubscription(userId, {
       subscriptionStatus: subscription.status,
-      subscriptionEndDate: new Date(subscription.current_period_end * 1000)
+      subscriptionEndDate: new Date(subscription.current_period_end * 1000).toISOString(),
+      updatedAt: new Date().toISOString()
     });
 
     console.log(`Subscription updated for user ${userId}, status: ${subscription.status}`);
   } catch (error) {
     console.error('Error handling subscription update:', error);
+    throw error;
   }
 }
 
@@ -172,12 +191,14 @@ async function handleSubscriptionDeleted(subscription) {
 
     await updateUserSubscription(userId, {
       subscriptionStatus: 'cancelled',
-      subscriptionEndDate: new Date()
+      subscriptionEndDate: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     });
 
     console.log(`Subscription cancelled for user ${userId}`);
   } catch (error) {
     console.error('Error handling subscription deletion:', error);
+    throw error;
   }
 }
 
@@ -190,11 +211,11 @@ async function handlePaymentSucceeded(invoice) {
       const { userId } = subscription.metadata;
       
       if (userId) {
-        // Update subscription end date for renewal
         await updateUserSubscription(userId, {
           subscriptionStatus: 'active',
-          subscriptionEndDate: new Date(subscription.current_period_end * 1000),
-          lastPaymentDate: new Date()
+          subscriptionEndDate: new Date(subscription.current_period_end * 1000).toISOString(),
+          lastPaymentDate: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
         });
 
         console.log(`Payment processed for user ${userId}`);
@@ -202,6 +223,7 @@ async function handlePaymentSucceeded(invoice) {
     }
   } catch (error) {
     console.error('Error handling payment success:', error);
+    throw error;
   }
 }
 
@@ -214,10 +236,10 @@ async function handlePaymentFailed(invoice) {
       const { userId } = subscription.metadata;
       
       if (userId) {
-        // Update subscription status - Stripe will retry automatically
         await updateUserSubscription(userId, {
-          subscriptionStatus: subscription.status, // Could be 'past_due' or 'unpaid'
-          lastPaymentFailure: new Date()
+          subscriptionStatus: subscription.status,
+          lastPaymentFailure: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
         });
 
         console.log(`Payment failed for user ${userId}, status: ${subscription.status}`);
@@ -225,34 +247,22 @@ async function handlePaymentFailed(invoice) {
     }
   } catch (error) {
     console.error('Error handling payment failure:', error);
+    throw error;
   }
 }
 
-// Replace this with your actual database update function
+// FIXED: Actually update Firebase instead of just logging
 async function updateUserSubscription(userId, subscriptionData) {
   try {
-    // Example using Firebase/Firestore
-    // const db = admin.firestore();
-    // await db.collection('users').doc(userId).update(subscriptionData);
+    console.log('Updating user subscription in Firebase:', { userId, ...subscriptionData });
     
-    // Example using MongoDB
-    // await User.findByIdAndUpdate(userId, subscriptionData);
+    // Update the user document in Firestore
+    await db.collection('users').doc(userId).set(subscriptionData, { merge: true });
     
-    // Example using PostgreSQL with Prisma
-    // await prisma.user.update({
-    //   where: { id: userId },
-    //   data: subscriptionData
-    // });
-    
-    // For now, just log the update
-    console.log('Database update needed:', { userId, ...subscriptionData });
-    
-    // TODO: Implement your database update logic here
-    // This is where you would update your user's subscription status
-    // in your database (Firebase, MongoDB, PostgreSQL, etc.)
+    console.log('Successfully updated user subscription in Firebase');
     
   } catch (error) {
-    console.error('Database update failed:', error);
+    console.error('Firebase update failed:', error);
     throw error; // Re-throw to trigger webhook retry
   }
 }
