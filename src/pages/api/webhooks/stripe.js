@@ -1,4 +1,4 @@
-// pages/api/webhooks/stripe.js - MINIMAL ADMIN SDK VERSION
+// pages/api/webhooks/stripe.js - SIMPLE REST API VERSION
 import { buffer } from 'micro';
 import Stripe from 'stripe';
 
@@ -9,41 +9,47 @@ export const config = {
   api: { bodyParser: false },
 };
 
-// Minimal Firebase Admin setup (only when needed)
-let adminDb = null;
-
-async function getAdminDb() {
-  if (adminDb) return adminDb;
-  
-  const admin = await import('firebase-admin');
-  
-  if (!admin.apps.length) {
-    admin.initializeApp({
-      credential: admin.credential.cert({
-        project_id: "askthestars-37936",
-        client_email: "firebase-adminsdk-ay29r@askthestars-37936.iam.gserviceaccount.com",
-        private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n')
-      })
-    });
-  }
-  
-  adminDb = admin.firestore();
-  return adminDb;
-}
-
-// Simple update function - same pattern as your onboarding
+// Simple Firebase update using REST API (no Admin SDK needed)
 async function updateUserSubscription(userId, data) {
   try {
-    const db = await getAdminDb();
-    const userRef = db.collection('users').doc(userId);
+    console.log('Updating user via REST API:', userId);
     
-    // Same pattern as: await setDoc(doc(db, 'users', user.uid), dataToSave);
-    await userRef.set(data, { merge: true });
+    // Convert data to Firestore REST format
+    const fields = {};
+    Object.keys(data).forEach(key => {
+      if (typeof data[key] === 'boolean') {
+        fields[key] = { booleanValue: data[key] };
+      } else {
+        fields[key] = { stringValue: String(data[key]) };
+      }
+    });
+
+    // Use Firebase REST API
+    const url = `https://firestore.googleapis.com/v1/projects/askthestars-37936/databases/(default)/documents/users/${userId}`;
     
-    console.log('✅ Updated user:', userId);
-    return true;
+    const response = await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        fields: fields,
+        updateMask: {
+          fieldPaths: Object.keys(data)
+        }
+      })
+    });
+
+    if (response.ok) {
+      console.log('✅ Firebase update successful for user:', userId);
+      return true;
+    } else {
+      const errorText = await response.text();
+      console.error('❌ Firebase update failed:', response.status, errorText);
+      return false;
+    }
   } catch (error) {
-    console.error('❌ Update failed:', error.message);
+    console.error('❌ Firebase update error:', error.message);
     return false;
   }
 }
@@ -59,27 +65,38 @@ export default async function handler(req, res) {
     const sig = req.headers['stripe-signature'];
     const event = stripe.webhooks.constructEvent(buf, sig, webhookSecret);
     
-    // Handle checkout completion (same logic as your onboarding)
+    console.log('Processing webhook event:', event.type);
+    
+    // Handle checkout completion
     if (event.type === 'checkout.session.completed') {
       const session = event.data.object;
       const { userId, plan } = session.metadata || {};
       
       if (userId && plan) {
-        console.log('Processing:', userId, plan);
+        console.log('Processing checkout for user:', userId, 'plan:', plan);
         
-        // Same data structure as your onboarding
         const subscriptionData = {
           subscriptionStatus: 'active',
           plan: plan,
-          stripeCustomerId: session.customer,
-          stripeSubscriptionId: session.subscription,
+          stripeCustomerId: session.customer || '',
+          stripeSubscriptionId: session.subscription || '',
           hasAcceptedTrial: true,
           subscriptionDate: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
 
-        await updateUserSubscription(userId, subscriptionData);
+        const success = await updateUserSubscription(userId, subscriptionData);
+        
+        if (success) {
+          console.log('✅ Subscription activated for user:', userId);
+        } else {
+          console.log('❌ Failed to activate subscription for user:', userId);
+        }
+      } else {
+        console.log('ℹ️ No userId/plan in metadata - skipping update');
       }
+    } else {
+      console.log(`ℹ️ Unhandled event type: ${event.type}`);
     }
 
     res.status(200).json({ received: true });
