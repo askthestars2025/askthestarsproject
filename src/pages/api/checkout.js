@@ -3,10 +3,34 @@ import Stripe from 'stripe';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-// Define your price IDs (create these in Stripe Dashboard or via API)
-const STRIPE_PRICES = {
-  weekly: process.env.STRIPE_WEEKLY_PRICE_ID || 'price_weekly_placeholder',
-  annual: process.env.STRIPE_ANNUAL_PRICE_ID || 'price_annual_placeholder'
+// Define price data directly (workaround for price ID issue)
+const getPriceData = (plan) => {
+  if (plan === 'weekly') {
+    return {
+      currency: 'usd',
+      product_data: {
+        name: 'Ask The Stars - Weekly Cosmic Access',
+        description: 'Unlock all premium astrology features for 1 week'
+      },
+      unit_amount: 499, // $4.99 in cents
+      recurring: {
+        interval: 'week'
+      }
+    };
+  } else if (plan === 'annual') {
+    return {
+      currency: 'usd', 
+      product_data: {
+        name: 'Ask The Stars - Annual Stellar Membership',
+        description: 'Unlock all premium astrology features for 1 year'
+      },
+      unit_amount: 4999, // $49.99 in cents
+      recurring: {
+        interval: 'year'
+      }
+    };
+  }
+  return null;
 };
 
 export default async function handler(req, res) {
@@ -33,24 +57,25 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Payment system configuration error' });
     }
 
-    // Check if price IDs are configured
-    if (!STRIPE_PRICES[plan] || STRIPE_PRICES[plan].includes('placeholder')) {
-      console.error(`Stripe price ID not configured for plan: ${plan}`);
-      return res.status(500).json({ error: 'Subscription plan not available' });
+    // Get price data for the plan
+    const priceData = getPriceData(plan);
+    if (!priceData) {
+      return res.status(400).json({ error: 'Invalid plan configuration' });
     }
 
     console.log('Creating subscription checkout session for:', { plan, userId, email });
+    console.log('Using price_data approach (workaround for price ID issue)');
 
-    // Create checkout session for subscription
+    // Create checkout session using price_data instead of price IDs
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [{
-        price: STRIPE_PRICES[plan],
+        price_data: priceData,
         quantity: 1,
       }],
-      mode: 'subscription', // Changed to subscription for recurring billing
-      success_url: `${req.headers.origin || process.env.NEXTAUTH_URL || 'http://localhost:3000'}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${req.headers.origin || process.env.NEXTAUTH_URL || 'http://localhost:3000'}/pricing?cancelled=true`,
+      mode: 'subscription',
+      success_url: `${req.headers.origin || 'https://lunatica-client.vercel.app'}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${req.headers.origin || 'https://lunatica-client.vercel.app'}/pricing?cancelled=true`,
       customer_email: email || undefined,
       metadata: {
         userId: userId.toString(),
@@ -58,14 +83,13 @@ export default async function handler(req, res) {
         type: 'astrology_subscription'
       },
       billing_address_collection: 'required',
-      allow_promotion_codes: true, // Allow discount codes
+      allow_promotion_codes: true,
       subscription_data: {
         metadata: {
           userId: userId.toString(),
           plan
         }
       },
-      // Automatic tax calculation (optional but recommended)
       automatic_tax: {
         enabled: process.env.STRIPE_AUTOMATIC_TAX === 'true'
       }
