@@ -1,5 +1,5 @@
 // pages/api/birth-chart.js
-import swisseph from 'swisseph';
+import swisseph from 'swisseph-v2';
 
 // Note: No ephemeris path needed for Moshier calculations (which work great on Vercel)
 
