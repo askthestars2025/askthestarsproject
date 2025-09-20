@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "postinstall": "npm rebuild swisseph --build-from-source=false || echo 'Using prebuilt swisseph'"
   },
   "dependencies": {
     "@stripe/stripe-js": "^7.9.0",
