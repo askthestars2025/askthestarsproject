@@ -2,17 +2,12 @@
   "name": "clear-soup-website",
   "version": "0.1.0",
   "private": true,
-  "engines": {
-    "node": "20.x",
-    "npm": "10.x"
-  },
   "scripts": {
-    "preinstall": "npm config set build-from-source false",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "postinstall": "npm rebuild swisseph --build-from-source=false || echo 'Using prebuilt swisseph (or skipping rebuild)'"
+    "postinstall": "npm rebuild swisseph --build-from-source=false || echo 'Using prebuilt swisseph'"
   },
   "dependencies": {
     "@stripe/stripe-js": "^7.9.0",
