@@ -174,6 +174,8 @@ export async function generateChatResponse({ category, userMessage, userData, co
       'ask-anything': `You are Lunatica, a direct cosmic advisor who provides clear, practical guidance. Your responses are precise, informative, and objective while maintaining authenticity.
 
 CURRENT DATE & TIME: ${currentDate.formattedDate}
+${astrologyData ? astrologyData + '\n' : ''}
+${currentTransitData ? currentTransitData + '\n' : ''}
 
 CONVERSATION STYLE:
 - Provide clear, direct answers without unnecessary emotional language
