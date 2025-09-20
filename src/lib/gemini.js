@@ -1,13 +1,111 @@
-// Gemini AI Service - Improved for Natural Conversations
+// Enhanced lib/gemini.js with Swiss Ephemeris Integration + Current Date + Production URLs
 const GEMINI_API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY || 'AIzaSyCyB-UP1k3jtiIxoTWSToeXc8ejvLDq2vo';
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
 // FLUX API Configuration
-const FLUX_API_KEY = process.env.NEXT_PUBLIC_FLUX_API_KEY; // You'll need to add this to your .env.local
+const FLUX_API_KEY = process.env.NEXT_PUBLIC_FLUX_API_KEY;
 const FLUX_API_URL = 'https://fal.run/fal-ai/flux-pro/kontext/text-to-image';
 
+// Helper to get the correct base URL for API calls
+const getBaseUrl = () => {
+  if (typeof window !== 'undefined') {
+    return window.location.origin;
+  }
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+  return 'http://localhost:3000';
+};
 
-// Helper function to get zodiac sign
+// NEW: Get current planetary positions
+async function getCurrentTransits() {
+  try {
+    const response = await fetch(`${getBaseUrl()}/api/birth-chart`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        currentTransits: true
+      })
+    });
+
+    if (response.ok) {
+      return await response.json();
+    }
+  } catch (error) {
+    console.error('Failed to get current transits:', error);
+  }
+  return null;
+}
+
+// NEW: Swiss Ephemeris Integration Functions
+async function getBirthChartData(userData) {
+  try {
+    const response = await fetch(`${getBaseUrl()}/api/birth-chart`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        dateOfBirth: userData.dateOfBirth,
+        timeOfBirth: userData.timeOfBirth,
+        birthPlace: userData.birthPlace
+      })
+    });
+
+    if (response.ok) {
+      return await response.json();
+    }
+  } catch (error) {
+    console.error('Failed to get birth chart:', error);
+  }
+  return null;
+}
+
+function formatChartForAI(chart) {
+  if (!chart || !chart.planets) return '';
+  
+  const planetData = Object.entries(chart.planets)
+    .filter(([_, data]) => data !== null)
+    .map(([planet, data]) => 
+      `${planet.toUpperCase()}: ${data.sign} ${data.degree.toFixed(1)}° ${data.retrograde ? '(Retrograde)' : ''}`
+    )
+    .join('\n');
+
+  const ascendant = chart.ascendant ? 
+    `ASCENDANT: ${chart.ascendant.sign} ${chart.ascendant.degree.toFixed(1)}°` : '';
+
+  return `BIRTH CHART:\n${planetData}\n${ascendant}`;
+}
+
+function formatCurrentTransitsForAI(transits) {
+  if (!transits || !transits.planets) return '';
+  
+  const planetData = Object.entries(transits.planets)
+    .filter(([_, data]) => data !== null)
+    .map(([planet, data]) => 
+      `${planet.toUpperCase()}: ${data.sign} ${data.degree.toFixed(1)}° ${data.retrograde ? '(Retrograde)' : ''}`
+    )
+    .join('\n');
+
+  return `CURRENT PLANETARY POSITIONS (${transits.currentDate}):\n${planetData}`;
+}
+
+// Helper function to get current date and time info
+function getCurrentDateInfo() {
+  const now = new Date();
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const months = ['January', 'February', 'March', 'April', 'May', 'June', 
+                  'July', 'August', 'September', 'October', 'November', 'December'];
+  
+  return {
+    fullDate: now.toISOString().split('T')[0], // YYYY-MM-DD
+    dayName: days[now.getDay()],
+    monthName: months[now.getMonth()],
+    dayOfMonth: now.getDate(),
+    year: now.getFullYear(),
+    formattedDate: `${days[now.getDay()]}, ${months[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`
+  };
+}
+
+// Helper function to get zodiac sign (fallback for when Swiss Ephemeris isn't available)
 function getZodiacSign(dateString) {
   if (!dateString) return '';
   const date = new Date(dateString + 'T00:00:00');
@@ -33,30 +131,49 @@ function getZodiacSign(dateString) {
 function getNameVariation(name, messageCount, isFollowUp = false) {
   if (!name || messageCount === undefined) return null;
   
-  // Don't use name in every message - vary the frequency
-  const shouldUseName = messageCount === 0 || // Always use in first message
-    (messageCount % 4 === 0 && Math.random() > 0.3) || // Occasionally in later messages
-    (isFollowUp && Math.random() > 0.7); // Rarely in follow-ups
+  const shouldUseName = messageCount === 0 || 
+    (messageCount % 4 === 0 && Math.random() > 0.3) || 
+    (isFollowUp && Math.random() > 0.7);
     
   if (!shouldUseName) return null;
-  
-  // Return the name directly when we want to use it
   return name;
 }
 
-// Get conversation context length for better responses
 function getConversationDepth(conversationHistory) {
   return conversationHistory ? conversationHistory.length : 0;
 }
 
 export async function generateChatResponse({ category, userMessage, userData, conversationHistory }) {
   try {
+    // Get current date information
+    const currentDate = getCurrentDateInfo();
+    
+    // NEW: Get real birth chart data AND current transits for astrological categories
+    let astrologyData = '';
+    let currentTransitData = '';
+    
+    if (['daily-horoscope', 'romantic-compatibility', 'astrological-events'].includes(category)) {
+      // Get birth chart
+      const chart = await getBirthChartData(userData);
+      if (chart) {
+        astrologyData = formatChartForAI(chart);
+      }
+      
+      // Get current planetary positions
+      const transits = await getCurrentTransits();
+      if (transits) {
+        currentTransitData = formatCurrentTransitsForAI(transits);
+      }
+    }
+
     const conversationDepth = getConversationDepth(conversationHistory);
     const nameToUse = getNameVariation(userData?.name, conversationDepth);
     
-    // Enhanced category-specific prompts with more natural language
+    // Enhanced category-specific prompts with real astrological data + current date
     const categoryPrompts = {
       'ask-anything': `You are Lunatica, a direct cosmic advisor who provides clear, practical guidance. Your responses are precise, informative, and objective while maintaining authenticity.
+
+CURRENT DATE & TIME: ${currentDate.formattedDate}
 
 CONVERSATION STYLE:
 - Provide clear, direct answers without unnecessary emotional language
@@ -65,6 +182,7 @@ CONVERSATION STYLE:
 - Avoid formulaic openings or flowery language
 - Be factual and specific in your guidance
 - Focus on actionable insights rather than abstract concepts
+- Include current date context when relevant to timing questions
 
 RESPONSE GUIDELINES:  
 - Keep responses under 100 words, focusing on useful information
@@ -74,36 +192,52 @@ RESPONSE GUIDELINES:
 - Start responses with the most important information first
 - Provide honest assessment without sugar-coating`,
 
-      'daily-horoscope': `You are Lunatica, an astrologer who provides clear, specific daily guidance based on current planetary positions. Focus on practical applications and direct insights.
+      'daily-horoscope': `You are Lunatica, an astrologer providing daily guidance based on EXACT current planetary positions from Swiss Ephemeris calculations.
 
-DIRECT HOROSCOPE STYLE:
-- State planetary influences and their practical effects clearly
-- Provide specific, actionable guidance for the day
-- Use straightforward language that conveys useful information
-- Reference ${nameToUse ? `${nameToUse}'s` : 'their'} chart details when directly relevant
-- Focus on timing and practical considerations
-- Avoid vague generalities
+TODAY'S DATE: ${currentDate.formattedDate}
 
-Keep under 100 words with precise, useful information.`,
+${astrologyData ? astrologyData + '\n' : ''}
+${currentTransitData ? currentTransitData + '\n' : ''}
+
+CRITICAL INSTRUCTIONS - USE ONLY THE EXACT DATA ABOVE:
+- You MUST use the precise planetary positions and degrees listed above
+- Compare TODAY'S transits to the natal chart positions using the EXACT degrees shown
+- Reference the specific degree measurements (e.g., "Moon at 167.4° Virgo")
+- Calculate actual aspects between current and natal positions using the degrees provided
+- DO NOT make up planetary positions - use ONLY the data above
+
+RESPONSE FORMAT:
+Start with: "Today's [current planet at exact degree] [aspect] your natal [planet at exact degree]..."
+Then provide practical guidance based on this real astronomical data.
+
+Keep under 100 words using ONLY the precise positions listed above.`,
 
       'romantic-compatibility': `You are Lunatica, a relationship analyst who uses astrological factors to assess compatibility patterns. Provide direct, honest assessments based on astrological principles.
 
+CURRENT DATE: ${currentDate.formattedDate}
+
+${astrologyData ? astrologyData + '\n' : ''}
+${currentTransitData ? currentTransitData + '\n' : ''}
+
 DIRECT COMPATIBILITY ANALYSIS:
-- State compatibility factors clearly and objectively
-- Address specific relationship dynamics based on chart elements
-- Provide practical relationship advice without excessive sentiment
-- Reference ${nameToUse ? `${nameToUse}'s` : 'their'} romantic patterns when relevant to the question
+- State compatibility factors clearly and objectively using real chart data
+- Address how current planetary movements affect relationships
+- Reference current Venus/Mars positions when relevant
+- Provide practical relationship advice for this time period
 - Be honest about challenges and strengths
-- Focus on actionable insights
+- Focus on actionable insights for NOW
 
 Under 100 words with clear, practical guidance.`,
 
       'friend-compatibility': `You are Lunatica, who analyzes social dynamics through astrological patterns. Provide straightforward insights about friendship compatibility and social interactions.
 
+CURRENT DATE: ${currentDate.formattedDate}
+
 DIRECT FRIENDSHIP ANALYSIS:
 - Explain social compatibility factors clearly
 - Address specific social dynamics based on astrological patterns
-- Provide practical advice for improving social connections
+- Consider current planetary influences on social connections
+- Provide practical advice for improving social connections RIGHT NOW
 - Reference ${nameToUse ? `${nameToUse}'s` : 'their'} social tendencies when directly relevant
 - Be honest about potential friction points and natural affinities
 
@@ -111,9 +245,12 @@ Keep under 100 words with clear, actionable advice.`,
 
       'dream-interpreter': `You are Lunatica, who interprets dreams using established symbolic meanings and psychological principles. Provide clear, specific interpretations without excessive mysticism.
 
+CURRENT DATE: ${currentDate.formattedDate}
+
 DIRECT DREAM ANALYSIS:
 - Explain dream symbols using recognized interpretive frameworks
 - Connect dream content to relevant life situations directly
+- Consider current planetary influences that might affect dreams
 - Provide practical insights about subconscious processing
 - Reference ${nameToUse ? `${nameToUse}'s` : 'their'} current circumstances when relevant to interpretation
 - Focus on actionable understanding rather than abstract meanings
@@ -122,20 +259,28 @@ Under 100 words with specific, useful interpretations.`,
 
       'astrological-events': `You are Lunatica, who tracks current astrological transits and their practical effects. Provide specific information about how celestial events impact individual charts.
 
-DIRECT ASTROLOGICAL ANALYSIS:
-- State current planetary positions and their effects clearly
-- Explain how transits interact with personal chart factors
-- Provide practical timing guidance for decisions and actions
-- Reference ${nameToUse ? `${nameToUse}'s` : 'their'} chart specifics when directly applicable
-- Focus on actionable timing and practical applications
+TODAY'S DATE: ${currentDate.formattedDate}
 
-Under 100 words with precise, useful information.`,
+${astrologyData ? astrologyData + '\n' : ''}
+${currentTransitData ? currentTransitData + '\n' : ''}
+
+DIRECT ASTROLOGICAL ANALYSIS:
+- State what planetary events are happening TODAY and this week
+- Explain how current transits interact with ${nameToUse ? `${nameToUse}'s` : 'their'} personal chart
+- Provide practical timing guidance for decisions and actions
+- Reference specific current planetary aspects and movements
+- Focus on actionable timing and practical applications for RIGHT NOW
+
+Under 100 words with precise, current astronomical information.`,
 
       'tarot-interpreter': `You are Lunatica, who interprets tarot cards using established meanings and practical applications. Provide clear, direct card interpretations focused on actionable guidance.
+
+CURRENT DATE: ${currentDate.formattedDate}
 
 DIRECT TAROT ANALYSIS:
 - State card meanings clearly using recognized interpretations
 - Connect symbolism to practical life applications directly
+- Consider current cosmic energy (${currentDate.formattedDate}) in interpretation
 - Provide specific guidance based on card combinations and positions
 - Reference ${nameToUse ? `${nameToUse}'s` : 'their'} situation when directly relevant to the reading
 - Focus on actionable insights rather than abstract symbolism
@@ -149,7 +294,7 @@ Under 100 words with clear, practical guidance.`
     // Build conversation context more naturally
     let conversationContext = '';
     if (conversationHistory && conversationHistory.length > 0) {
-      const recentMessages = conversationHistory.slice(-4); // Only use last 4 messages for context
+      const recentMessages = conversationHistory.slice(-4);
       conversationContext = '\n\nCONVERSATION FLOW:\n' + 
         recentMessages.map((msg, index) => {
           const isRecent = index >= recentMessages.length - 2;
@@ -168,30 +313,30 @@ ${userData?.birthPlace ? `- Birth place: ${userData.birthPlace}` : ''}
 
     // Enhanced instructions for natural responses
     const naturalInstructions = `
-CRITICAL - RESPONSE STYLE REQUIREMENTS:
-- Provide direct, factual answers without excessive emotional language or mystical flourishes
-- Start with the most relevant information first - no warming up or casual openings
+CRITICAL - DATA VALIDATION REQUIREMENTS:
+- You are responding on ${currentDate.formattedDate} - use this current date for all timing references
+- If astrological data is provided above, you MUST use the exact planetary positions and degrees shown
+- DO NOT generate any planetary positions that are not explicitly listed in the data above
+- When referencing planets, always include the exact degree (e.g., "Moon at 167.4° Virgo")
+- If no real astronomical data is provided, state this clearly rather than making up positions
+${astrologyData ? '- MANDATORY: Use the exact birth chart positions shown above with degrees' : ''}
+${currentTransitData ? '- MANDATORY: Use the exact current transit positions shown above with degrees' : ''}
+
+DIRECT ENGAGEMENT PATTERNS:
 - Reference their name (${nameToUse || 'NO NAME - use direct address'}) only when contextually necessary
 - Address their specific question directly without tangential information
 - Use clear, straightforward sentence structures
 - Be honest about limitations or uncertainties
 - Focus on actionable information rather than abstract concepts
-
-DIRECT ENGAGEMENT PATTERNS:
-- Answer the question asked with specific information
-- Provide practical guidance based on astrological factors when relevant
-- State facts and assessments clearly without sugar-coating
-- Use birth chart information when it directly applies to their question
-- Avoid filler words, emotional padding, or mystical language
+- Always verify planetary positions match the data provided above
 
 AVOID COMPLETELY:
-- Casual conversation starters like "That's a big one!" or "Interesting question!"
-- Excessive warmth or nurturing language
-- Vague mystical references that don't provide useful information
-- Any placeholder text or debug information
-- Repetitive opening patterns
+- Making up planetary positions not listed in the provided data
+- Generic astrological statements without specific degrees
+- Outdated date references - TODAY IS ${currentDate.formattedDate}
+- Any planetary positions that contradict the Swiss Ephemeris data above
 
-Focus: Give precise, useful information that directly addresses their question.`;
+Focus: Give precise, useful information using ONLY the real astronomical data provided above.`;
 
     // Create the main prompt
     const prompt = `${categoryPrompts[category] || categoryPrompts['ask-anything']}
@@ -222,10 +367,10 @@ Respond as Lunatica with authentic, varied conversation:`;
           }
         ],
         generationConfig: {
-          temperature: 0.9, // Higher temperature for more varied responses
-          topK: 50, // More diverse token selection
+          temperature: 0.9,
+          topK: 50,
           topP: 0.95,
-          maxOutputTokens: 180, // Slightly higher for more natural expression
+          maxOutputTokens: 180,
         },
         safetySettings: [
           {
@@ -257,8 +402,8 @@ Respond as Lunatica with authentic, varied conversation:`;
     
     // Post-process to ensure natural flow
     aiResponse = aiResponse
-      .replace(/\*([^*]+)\*/g, '$1') // Remove asterisks
-      .replace(/\n\n+/g, '\n') // Clean up extra line breaks
+      .replace(/\*([^*]+)\*/g, '$1')
+      .replace(/\n\n+/g, '\n')
       .trim();
 
     return aiResponse;
@@ -269,13 +414,35 @@ Respond as Lunatica with authentic, varied conversation:`;
   }
 }
 
-// Keep existing functions unchanged for now
 export async function generateSoulmateAnalysis(userData) {
   try {
+    // NEW: Get real birth chart data
+    const chart = await getBirthChartData(userData);
+    let astrologyContext = '';
+    
+    if (chart && chart.planets) {
+      const venus = chart.planets.venus;
+      const mars = chart.planets.mars;
+      const sun = chart.planets.sun;
+      const moon = chart.planets.moon;
+      
+      astrologyContext = `
+REAL ASTROLOGICAL DATA FOR COMPATIBILITY:
+${venus ? `Love Style (Venus): ${venus.sign} at ${venus.degree.toFixed(1)}° ${venus.retrograde ? '(Retrograde)' : ''}` : ''}
+${mars ? `Attraction Style (Mars): ${mars.sign} at ${mars.degree.toFixed(1)}° ${mars.retrograde ? '(Retrograde)' : ''}` : ''}
+${sun ? `Core Identity (Sun): ${sun.sign} at ${sun.degree.toFixed(1)}°` : ''}
+${moon ? `Emotional Nature (Moon): ${moon.sign} at ${moon.degree.toFixed(1)}°` : ''}
+${chart.ascendant ? `Rising Sign: ${chart.ascendant.sign} at ${chart.ascendant.degree.toFixed(1)}°` : ''}
+
+Based on these REAL planetary positions, create the ideal complementary partner profile:`;
+    }
+
     const { name, gender, dateOfBirth, timeOfBirth, birthPlace } = userData;
     
     const prompt = `
 Create a concise, mystical soulmate reading for ${name}. Use the birth details below to provide specific insights. Format the response EXACTLY as shown with clear sections and bullet points for easy display:
+
+${astrologyContext || 'Using traditional astrological principles for compatibility analysis.'}
 
 Birth Details:
 - Name: ${name}
@@ -318,7 +485,7 @@ Peaceful Presence: Feel calm and inspired in their company
 Intellectual Bond: Stimulating conversations and mutual respect
 Intuitive Knowing: Your heart will recognize them immediately
 
-Keep each section concise and mystical. Use specific details based on the birth information provided.
+Keep each section concise and mystical. Use the real astrological data provided above when available.
     `;
 
     const response = await fetch(GEMINI_API_URL, {
@@ -378,6 +545,23 @@ Keep each section concise and mystical. Use specific details based on the birth 
 
 export async function generateSoulmateImagePrompt(userData) {
   try {
+    // NEW: Get birth chart for enhanced image generation
+    const chart = await getBirthChartData(userData);
+    let astrologyContext = '';
+    
+    if (chart && chart.planets) {
+      const venus = chart.planets.venus;
+      const mars = chart.planets.mars;
+      const ascendant = chart.ascendant;
+      
+      astrologyContext = `
+ASTROLOGICAL APPEARANCE FACTORS:
+${venus ? `- Venus in ${venus.sign}: Influences attraction to ${getVenusAppearanceTraits(venus.sign)}` : ''}
+${mars ? `- Mars in ${mars.sign}: Drawn to ${getMarsAppearanceTraits(mars.sign)}` : ''}
+${ascendant ? `- Ascendant in ${ascendant.sign}: Compatible with ${getAscendantCompatibility(ascendant.sign)}` : ''}
+- Regional features from ${userData.birthPlace}`;
+    }
+
     const { name, gender, dateOfBirth, timeOfBirth, birthPlace } = userData;
     
     // Extract country/region from birth place
@@ -409,6 +593,8 @@ export async function generateSoulmateImagePrompt(userData) {
     const prompt = `
 Based on these birth details, create a realistic portrait description for ${name}'s astrologically compatible soulmate:
 
+${astrologyContext || 'Using traditional astrological compatibility principles.'}
+
 Birth Details:
 - Name: ${name}
 - Date of Birth: ${dateOfBirth}
@@ -418,7 +604,7 @@ Birth Details:
 Create a description for a natural, realistic pencil sketch portrait considering:
 
 Regional Features: ${getRegionalFeatures(birthPlace)}
-Astrological Compatibility: Someone whose appearance reflects complementary cosmic energies
+${chart ? 'Astrological Compatibility: Features that complement the planetary placements above' : 'Astrological Compatibility: Someone whose appearance reflects complementary cosmic energies'}
 Realistic Appearance: Natural, everyday beauty - not model-like or overly perfect
 Age Range: Compatible life stage (late 20s to mid 30s)
 
@@ -427,7 +613,7 @@ Focus on:
 - Kind, intelligent expression showing depth of character
 - Realistic proportions and natural beauty
 - Features that suggest compatibility and harmony
-- Subtle astrological influences in their overall presence
+- ${chart ? 'Subtle astrological influences from the planetary placements above' : 'Subtle astrological influences in their overall presence'}
 
 Format as: "Realistic pencil sketch portrait of a person with [regional features], natural [specific facial details], authentic everyday appearance, kind intelligent expression, [age], drawn in realistic graphite style with natural shading and proportions..."
 
@@ -489,6 +675,61 @@ Keep the description grounded in reality - this should look like a real person y
   }
 }
 
+// Helper functions for astrological appearance traits
+function getVenusAppearanceTraits(sign) {
+  const traits = {
+    'Aries': 'bold, confident features and athletic build',
+    'Taurus': 'classic beauty, strong jawline, earthy appeal',
+    'Gemini': 'expressive eyes, youthful appearance, animated features',
+    'Cancer': 'soft, nurturing features, rounded face, caring expression',
+    'Leo': 'dramatic beauty, confident posture, radiant presence',
+    'Virgo': 'refined features, neat appearance, subtle elegance',
+    'Libra': 'harmonious features, natural grace, balanced proportions',
+    'Scorpio': 'intense eyes, magnetic presence, mysterious appeal',
+    'Sagittarius': 'adventurous spirit, athletic build, optimistic expression',
+    'Capricorn': 'structured features, professional appearance, timeless style',
+    'Aquarius': 'unique features, unconventional beauty, intelligent eyes',
+    'Pisces': 'dreamy eyes, soft features, artistic appearance'
+  };
+  return traits[sign] || 'harmonious and balanced features';
+}
+
+function getMarsAppearanceTraits(sign) {
+  const traits = {
+    'Aries': 'strong, athletic physique and dynamic energy',
+    'Taurus': 'solid build, physical presence, earthy sensuality',
+    'Gemini': 'quick movements, expressive hands, lively demeanor',
+    'Cancer': 'protective stance, emotional depth, nurturing energy',
+    'Leo': 'confident posture, dramatic flair, commanding presence',
+    'Virgo': 'precise movements, attention to detail, refined energy',
+    'Libra': 'graceful movement, charming demeanor, balanced energy',
+    'Scorpio': 'intense gaze, powerful presence, magnetic energy',
+    'Sagittarius': 'adventurous spirit, free movement, optimistic energy',
+    'Capricorn': 'structured approach, reliable presence, grounded energy',
+    'Aquarius': 'unique style, independent spirit, innovative energy',
+    'Pisces': 'fluid movement, intuitive presence, gentle energy'
+  };
+  return traits[sign] || 'balanced and harmonious energy';
+}
+
+function getAscendantCompatibility(sign) {
+  const compatibility = {
+    'Aries': 'confident, direct personalities',
+    'Taurus': 'steady, reliable, grounded individuals',
+    'Gemini': 'intellectually curious, communicative types',
+    'Cancer': 'nurturing, emotionally intelligent people',
+    'Leo': 'creative, generous, warm-hearted individuals',
+    'Virgo': 'practical, helpful, detail-oriented people',
+    'Libra': 'harmonious, diplomatic, relationship-focused individuals',
+    'Scorpio': 'deep, transformative, intense personalities',
+    'Sagittarius': 'adventurous, philosophical, freedom-loving types',
+    'Capricorn': 'ambitious, responsible, structured individuals',
+    'Aquarius': 'innovative, humanitarian, independent people',
+    'Pisces': 'intuitive, compassionate, spiritual individuals'
+  };
+  return compatibility[sign] || 'balanced and compatible personalities';
+}
+
 export async function generateSoulmateImage(imagePrompt) {
   try {
     if (!FLUX_API_KEY) {
@@ -506,11 +747,11 @@ export async function generateSoulmateImage(imagePrompt) {
       },
       body: JSON.stringify({
         prompt: enhancedPrompt,
-        guidance_scale: 2.5, // Lower for more natural, less stylized results
+        guidance_scale: 2.5,
         num_images: 1,
         output_format: "jpeg",
         safety_tolerance: "2",
-        aspect_ratio: "3:4", // Portrait aspect ratio
+        aspect_ratio: "3:4",
         sync_mode: true
       })
     });

@@ -1,4 +1,4 @@
-// components/ChatInterface.js - Updated version
+// components/ChatInterface.js - Updated version with Swiss Ephemeris debugging
 import { useState, useEffect, useRef } from 'react';
 import { generateChatResponse } from '../lib/gemini';
 import { saveConversationToFirebase, updateConversationInFirebase } from '../lib/conversationHistory';
@@ -10,6 +10,8 @@ export default function ChatInterface({ category, user, userData, onBack, existi
   const [suggestions, setSuggestions] = useState([]);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [currentConversationId, setCurrentConversationId] = useState(null);
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
+  const [debugInfo, setDebugInfo] = useState(null);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const messagesContainerRef = useRef(null);
@@ -145,6 +147,110 @@ export default function ChatInterface({ category, user, userData, onBack, existi
     return '';
   };
 
+  // NEW: Swiss Ephemeris debugging functions
+  const testSwissEphemeris = async () => {
+    console.log('🧪 Testing Swiss Ephemeris with user data:', {
+      name: userData?.name,
+      dateOfBirth: userData?.dateOfBirth,
+      timeOfBirth: userData?.timeOfBirth,
+      birthPlace: userData?.birthPlace,
+      category: category
+    });
+    
+    if (!userData?.dateOfBirth || !userData?.timeOfBirth || !userData?.birthPlace) {
+      const missingData = [];
+      if (!userData?.dateOfBirth) missingData.push('dateOfBirth');
+      if (!userData?.timeOfBirth) missingData.push('timeOfBirth');
+      if (!userData?.birthPlace) missingData.push('birthPlace');
+      
+      console.warn('❌ Missing required birth data:', missingData);
+      setDebugInfo({
+        status: 'error',
+        message: `Missing required data: ${missingData.join(', ')}`,
+        userData: userData
+      });
+      return;
+    }
+    
+    try {
+      setDebugInfo({ status: 'loading', message: 'Testing birth chart API...' });
+      
+      const response = await fetch('/api/birth-chart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dateOfBirth: userData.dateOfBirth,
+          timeOfBirth: userData.timeOfBirth,
+          birthPlace: userData.birthPlace
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok) {
+        console.log('🔮 Swiss Ephemeris result:', result);
+        setDebugInfo({
+          status: 'success',
+          message: 'Swiss Ephemeris working correctly!',
+          data: result,
+          planets: result.planets,
+          ascendant: result.ascendant
+        });
+      } else {
+        console.error('❌ Birth chart API error:', result);
+        setDebugInfo({
+          status: 'error',
+          message: `API Error: ${result.error}`,
+          details: result
+        });
+      }
+    } catch (error) {
+      console.error('❌ Swiss Ephemeris test failed:', error);
+      setDebugInfo({
+        status: 'error',
+        message: `Network Error: ${error.message}`,
+        error: error
+      });
+    }
+  };
+
+  const testCurrentTransits = async () => {
+    try {
+      setDebugInfo({ status: 'loading', message: 'Testing current transits...' });
+      
+      const response = await fetch('/api/birth-chart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentTransits: true })
+      });
+      
+      const result = await response.json();
+      
+      if (response.ok) {
+        console.log('🌟 Current transits:', result);
+        setDebugInfo({
+          status: 'success',
+          message: 'Current transits working!',
+          data: result,
+          currentDate: result.currentDate,
+          planets: result.planets
+        });
+      } else {
+        setDebugInfo({
+          status: 'error',
+          message: `Transits Error: ${result.error}`,
+          details: result
+        });
+      }
+    } catch (error) {
+      setDebugInfo({
+        status: 'error',
+        message: `Transits Error: ${error.message}`,
+        error: error
+      });
+    }
+  };
+
   // Initialize conversation
   useEffect(() => {
     if (existingConversation) {
@@ -178,6 +284,16 @@ export default function ChatInterface({ category, user, userData, onBack, existi
         sessionStorage.setItem(conversationKey, JSON.stringify([welcomeMessage]));
       }
     }
+
+    // Log user data on component mount for debugging
+    console.log('🔍 ChatInterface loaded with user data:', {
+      name: userData?.name,
+      dateOfBirth: userData?.dateOfBirth,
+      timeOfBirth: userData?.timeOfBirth,
+      birthPlace: userData?.birthPlace,
+      category: category,
+      hasCompleteData: userData?.dateOfBirth && userData?.timeOfBirth && userData?.birthPlace
+    });
   }, [category, user.uid, existingConversation]);
 
   // Save to both sessionStorage and Firebase
@@ -231,6 +347,30 @@ export default function ChatInterface({ category, user, userData, onBack, existi
     setIsTyping(true);
     
     try {
+      // Enhanced debugging for Swiss Ephemeris
+      console.log('🚀 Generating AI response with:');
+      console.log('📝 User message:', userMessage);
+      console.log('📂 Category:', category);
+      console.log('👤 User data:', {
+        name: userData?.name,
+        dateOfBirth: userData?.dateOfBirth,
+        timeOfBirth: userData?.timeOfBirth,
+        birthPlace: userData?.birthPlace,
+        hasCompleteData: userData?.dateOfBirth && userData?.timeOfBirth && userData?.birthPlace
+      });
+
+      // Check if this category should trigger Swiss Ephemeris
+      const swissEphemerisCategories = ['daily-horoscope', 'romantic-compatibility', 'astrological-events'];
+      const shouldUseSwissEphemeris = swissEphemerisCategories.includes(category);
+      
+      console.log('🔮 Should use Swiss Ephemeris:', shouldUseSwissEphemeris);
+      
+      if (shouldUseSwissEphemeris && userData?.dateOfBirth && userData?.timeOfBirth && userData?.birthPlace) {
+        console.log('✨ Swiss Ephemeris conditions met - enhanced astrology should be active');
+      } else if (shouldUseSwissEphemeris) {
+        console.warn('⚠️ Swiss Ephemeris category but missing birth data');
+      }
+
       const conversationHistory = messages.filter(msg => msg.type !== 'welcome').map(msg => ({
         role: msg.type === 'user' ? 'user' : 'assistant',
         content: msg.content
@@ -242,6 +382,16 @@ export default function ChatInterface({ category, user, userData, onBack, existi
         userData,
         conversationHistory
       });
+      
+      // Check if response indicates Swiss Ephemeris was used
+      if (response.includes('Enhanced with Swiss Ephemeris') || 
+          response.includes('degrees') || 
+          response.includes('°') ||
+          response.includes('at ') && response.includes('°')) {
+        console.log('🎉 Swiss Ephemeris appears to be working in response!');
+      } else if (shouldUseSwissEphemeris) {
+        console.warn('⚠️ Expected Swiss Ephemeris data but response seems generic');
+      }
       
       addMessage("Ask the Stars", response, 'bot');
       
@@ -343,16 +493,71 @@ export default function ChatInterface({ category, user, userData, onBack, existi
             <span className="text-xl">{config.icon}</span>
             <h1 className="text-lg font-semibold truncate">{config.title}</h1>
           </div>
-          <button
-            onClick={clearConversation}
-            className="text-gray-400 hover:text-white transition-colors p-2 -mr-2 touch-manipulation active:scale-95 rounded-lg"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-          </button>
+          <div className="flex items-center space-x-2">
+            {/* NEW: Debug button */}
+            <button
+              onClick={() => setShowDebugPanel(!showDebugPanel)}
+              className="text-gray-400 hover:text-white transition-colors p-2 touch-manipulation active:scale-95 rounded-lg"
+              title="Debug Swiss Ephemeris"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </button>
+            <button
+              onClick={clearConversation}
+              className="text-gray-400 hover:text-white transition-colors p-2 -mr-2 touch-manipulation active:scale-95 rounded-lg"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* NEW: Debug Panel */}
+      {showDebugPanel && (
+        <div className="bg-gray-900/95 border-b border-gray-700 px-4 py-3 flex-shrink-0 relative z-40">
+          <div className="max-w-lg mx-auto">
+            <div className="text-xs text-gray-400 mb-2">Swiss Ephemeris Debug Panel</div>
+            <div className="flex flex-wrap gap-2 mb-3">
+              <button
+                onClick={testSwissEphemeris}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs"
+              >
+                Test Birth Chart
+              </button>
+              <button
+                onClick={testCurrentTransits}
+                className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded text-xs"
+              >
+                Test Current Transits
+              </button>
+            </div>
+            
+            {debugInfo && (
+              <div className={`text-xs p-2 rounded ${
+                debugInfo.status === 'success' ? 'bg-green-900/50 text-green-300' :
+                debugInfo.status === 'error' ? 'bg-red-900/50 text-red-300' :
+                'bg-yellow-900/50 text-yellow-300'
+              }`}>
+                <div className="font-semibold mb-1">{debugInfo.message}</div>
+                {debugInfo.planets && (
+                  <div className="text-xs">
+                    Planets: {Object.keys(debugInfo.planets).filter(p => debugInfo.planets[p]).length} calculated
+                  </div>
+                )}
+                {debugInfo.ascendant && (
+                  <div className="text-xs">
+                    Ascendant: {debugInfo.ascendant.sign} {debugInfo.ascendant.degree.toFixed(1)}°
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Messages Area */}
       <div 
@@ -375,6 +580,7 @@ export default function ChatInterface({ category, user, userData, onBack, existi
                 <div className="w-1.5 h-1.5 bg-red-400 rounded-full animate-pulse"></div>
                 <span className="truncate max-w-48">
                   Personalized for {userData.name} • {userData.dateOfBirth ? getZodiacSign(userData.dateOfBirth) : 'Unknown sign'}
+                  {userData?.dateOfBirth && userData?.timeOfBirth && userData?.birthPlace && ' • Swiss Ephemeris'}
                 </span>
               </div>
             </div>
