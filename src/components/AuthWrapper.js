@@ -33,7 +33,7 @@ export default function AuthWrapper({ children }) {
           {/* Lunatica Logo */}
           <div className="mb-8">
             <h1 className="text-4xl md:text-6xl font-light tracking-wider mb-4">
-              Lunatica
+              Ask the Stars
             </h1>
             <div className="flex justify-center space-x-2 mb-6">
               <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
