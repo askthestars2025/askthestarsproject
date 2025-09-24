@@ -430,15 +430,7 @@ export default function SoulmateGenerator({ user, userData, onBack }) {
           </p>
         </div>
 
-        {/* Regenerate Option */}
-        <div className="mt-6 text-center">
-          <button
-            onClick={handleRegenerateClick}
-            className="text-sm text-gray-500 hover:text-orange-400 transition-colors"
-          >
-            {soulmateImage?.enhancedWithAstrology ? 'Recalculate cosmic alignment' : 'Generate new cosmic match'}
-          </button>
-        </div>
+        
       </div>
 
       <style jsx>{`

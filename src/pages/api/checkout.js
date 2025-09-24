@@ -12,7 +12,7 @@ const getPriceData = (plan) => {
         name: 'Ask The Stars - Weekly Cosmic Access',
         description: 'Unlock all premium astrology features for 1 week'
       },
-      unit_amount: 0, // $4.99 in cents
+      unit_amount: 499, // $4.99 in cents
       recurring: {
         interval: 'week'
       }
@@ -24,7 +24,7 @@ const getPriceData = (plan) => {
         name: 'Ask The Stars - Annual Stellar Membership',
         description: 'Unlock all premium astrology features for 1 year'
       },
-      unit_amount: 100, // $49.99 in cents
+      unit_amount: 4999, // $49.99 in cents
       recurring: {
         interval: 'year'
       }

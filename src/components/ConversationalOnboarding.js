@@ -590,7 +590,7 @@ export default function ConversationalOnboarding({ user, onComplete }) {
                   className="bg-gradient-to-r from-red-500 to-orange-500 text-white px-4 sm:px-6 py-3 sm:py-3.5 rounded-full font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:from-red-600 hover:to-orange-600 active:from-red-700 active:to-orange-700 transition-all duration-200 touch-manipulation active:scale-95 min-w-[52px] flex items-center justify-center"
                 >
                   <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14m-7-7l7 7-7 7" />
                   </svg>
                 </button>
               </div>

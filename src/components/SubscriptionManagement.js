@@ -80,7 +80,7 @@ export default function SubscriptionManagement({ user, userData, onBack }) {
       }
     } catch (error) {
       console.error('Cancel error:', error);
-      alert(error.message || 'Failed to cancel subscription. Please contact support at support@askthestars.com');
+      alert(error.message || 'Failed to cancel subscription. Please contact support at info@askthestars.com');
     } finally {
       setLoading(false);
     }
@@ -228,7 +228,7 @@ export default function SubscriptionManagement({ user, userData, onBack }) {
             </div>
 
             <div className="text-center text-gray-500 text-xs">
-              Questions about your subscription? Contact our support team at support@askthestars.com
+              Questions about your subscription? Contact our support team at info@askthestars.com
             </div>
           </div>
         ) : (
